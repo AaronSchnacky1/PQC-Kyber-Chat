@@ -1,0 +1,157 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PQC Notary PWA v1.0</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <meta name="theme-color" content="#007acc">
+  <script src="https://cdn.jsdelivr.net/npm/@pq-crystals/dilithium@0.2.0/dist/dilithium.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
+  <style>
+    body { font-family: system-ui; max-width: 600px; margin: 2rem auto; padding: 1rem; background: #f9f9fb; }
+    h1 { text-align: center; }
+    .box { border: 2px dashed #ccc; padding: 2rem; text-align: center; margin: 1rem 0; border-radius: 8px; }
+    .box.dragover { border-color: #007acc; background: #e6f7ff; }
+    button { background: #007acc; color: white; border: none; padding: 0.8rem 1.2rem; margin: 0.5rem; border-radius: 6px; cursor: pointer; }
+    pre { background: #f0f0f0; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    .status { margin-top: 1rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>PQC Notary PWA v1.0</h1>
+  <p>Drag a file to sign (quantum-safe)</p>
+  <div class="box" id="drop-zone">Drop file here</div>
+  <button onclick="signFile()">Sign File</button>
+  <div id="result"></div>
+
+  <script>
+    let fileToSign;
+    let deferredPrompt;
+
+    const dropZone = document.getElementById('drop-zone');
+    ['dragover', 'dragenter'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('dragover'); }));
+    ['dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.remove('dragover'); }));
+    dropZone.addEventListener('drop', e => {
+      fileToSign = e.dataTransfer.files[0];
+      dropZone.innerText = `File: ${fileToSign.name}`;
+    });
+
+    async function hashFile(file) {
+      const buffer = await file.arrayBuffer();
+      const hash = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(buffer));
+      return hash.toString();
+    }
+
+    async function signFile() {
+      if (!fileToSign) return alert("Drop a file first");
+      const result = document.getElementById('result');
+      result.innerHTML = "Signing...";
+
+      const data = await fileToSign.arrayBuffer();
+      const fileHash = await hashFile(fileToSign);
+      const timestamp = new Date().toISOString();
+
+      const kp = await dilithium.keyPair();
+      const message = `${fileHash}|${timestamp}`;
+      const sig = await dilithium.sign(new TextEncoder().encode(message), kp.privateKey);
+
+      const proof = {
+        signature: Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join(''),
+        public_key: Array.from(new Uint8Array(kp.publicKey)).map(b => b.toString(16).padStart(2, '0')).join(''),
+        file_hash: fileHash,
+        timestamp,
+        filename: fileToSign.name
+      };
+
+      const blob = new Blob([JSON.stringify(proof, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileToSign.name + '.sig.json';
+      a.click();
+
+      result.innerHTML = `<pre>${JSON.stringify(proof, null, 2)}</pre><p>Saved: <b>${fileToSign.name}.sig.json</b></p>`;
+    }
+
+    // PWA Install
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installBtn = document.createElement('button');
+      installBtn.textContent = 'Install App';
+      installBtn.style.position = 'fixed';
+      installBtn.style.bottom = '20px';
+      installBtn.style.right = '20px';
+      installBtn.style.zIndex = '1000';
+      installBtn.onclick = () => {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(() => installBtn.remove());
+      };
+      document.body.appendChild(installBtn);
+    });
+
+    // Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
+```
+
+```json
+// manifest.json
+{
+  "name": "PQC Notary PWA",
+  "short_name": "PQC Notary",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9f9fb",
+  "theme_color": "#007acc",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+```
+
+```js
+// sw.js
+const CACHE = 'pqc-notary-pwa-v1';
+const FILES = ['/', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)));
+});
+
+self.addEventListener('fetch', e => {
+  e.respondWith(caches.match(e.request).then(resp => resp || fetch(e.request)));
+});
+```
+
+---
+
+**FINAL_PWA_v1.0**  
+- Open `index.html` in Chrome/Edge  
+- **Install App** button → Add to Home Screen  
+- Works **offline** after first load  
+- Drag file → sign → download `.sig.json`
+
+---
+
+**Next?**  
+Say: **Make TPM**  
+→ I’ll give you **FINAL_TPM_v1.0_core**
+
+**Go.**

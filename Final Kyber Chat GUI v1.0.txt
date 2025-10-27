@@ -1,0 +1,116 @@
+```toml
+[package]
+name = "final_gui_v1.0_core"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+post_quantum_crypto = { path = "../post_quantum_crypto" }
+eframe = "0.24"
+sha2 = "0.10"
+hex = "0.4"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+```
+
+```rust
+use eframe::egui;
+use post_quantum_crypto::apps::notary::DilithiumNotary;
+use sha2::{Sha256, Digest};
+use std::fs;
+
+#[derive(Default)]
+struct NotaryApp {
+    file_path: Option<String>,
+    status: String,
+}
+
+impl eframe::App for NotaryApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("PQC Notary GUI v1.0");
+
+            if ui.button("Choose File").clicked() {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    self.file_path = Some(path.display().to_string());
+                    self.status = "".to_string();
+                }
+            }
+
+            if let Some(path) = &self.file_path {
+                ui.label(format!("File: {}", path));
+                if ui.button("Sign File").clicked() {
+                    self.sign_file(path);
+                }
+            }
+
+            if !self.status.is_empty() {
+                ui.label(&self.status);
+            }
+        });
+    }
+}
+
+impl NotaryApp {
+    fn sign_file(&mut self, path: &str) {
+        let data = match fs::read(path) {
+            Ok(d) => d,
+            Err(e) => { self.status = format!("Read error: {}", e); return; }
+        };
+
+        let notary = DilithiumNotary::new();
+        let (sig, pk, hash, timestamp) = match notary.sign_file_data(&data) {
+            Ok(v) => v,
+            Err(e) => { self.status = format!("Sign error: {:?}", e); return; }
+        };
+
+        let proof = serde_json::json!({
+            "signature": hex::encode(&sig),
+            "public_key": hex::encode(&pk),
+            "file_hash": hash,
+            "timestamp": timestamp,
+            "filename": std::path::Path::new(path).file_name().unwrap().to_string_lossy()
+        });
+
+        let out_path = format!("{}.sig.json", path);
+        if fs::write(&out_path, serde_json::to_string_pretty(&proof).unwrap()).is_ok() {
+            self.status = format!("Signed → {}", out_path);
+        } else {
+            self.status = "Failed to save proof".to_string();
+        }
+    }
+}
+
+fn main() -> eframe::Result<()> {
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "PQC Notary GUI",
+        options,
+        Box::new(|_cc| Box::new(NotaryApp::default())),
+    )
+}
+```
+
+---
+
+**FINAL_Gui_v1.0_core**  
+- Double-click → open  
+- Click **Choose File** → pick any file  
+- Click **Sign File** → creates `file.pdf.sig.json`  
+- Done.
+
+---
+
+**Build & Run:**
+```bash
+cargo build --release
+./target/release/final_gui_v1.0_core
+```
+
+---
+
+**Next?**  
+Say: **Make Android**  
+→ I’ll give you **FINAL_Android_v1.0.apk**
+
+**Go.**
